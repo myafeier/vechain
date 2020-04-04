@@ -3,10 +3,10 @@ package vechain
 import (
 	"context"
 	"fmt"
-	"github.com/go-xorm/xorm"
 	"github.com/myafeier/log"
 	"strconv"
 	"sync"
+	"xorm.io/xorm"
 )
 
 const (

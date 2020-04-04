@@ -5,7 +5,7 @@ import (
 	"math/rand"
 	"time"
 
-	"github.com/go-xorm/xorm"
+	"xorm.io/xorm"
 )
 
 const (

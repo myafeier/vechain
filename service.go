@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-xorm/xorm"
 	"github.com/myafeier/log"
+	"xorm.io/xorm"
 )
 
 var Daemon *Service
@@ -72,7 +72,7 @@ func GetExplorUrlByTxid(txid string) string {
 func GetBlockInfoByUuid(uuid string) (b *Block, err error) {
 	session := Daemon.dbEngine.NewSession()
 	b = new(Block)
-	has, err := session.Where("uuid=?", uuid).Get(b)
+	has, err := session.Where("hash=?", uuid).Get(b)
 	if err != nil {
 		log.Error("%+v", err.Error())
 		return
