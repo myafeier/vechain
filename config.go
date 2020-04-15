@@ -42,12 +42,10 @@ func initTable(session *xorm.Session) (err error) {
 			err = session.CreateTable(v)
 			if err != nil {
 				panic(err)
-				return
 			}
 			err = session.CreateIndexes(v)
 			if err != nil {
 				panic(err)
-				return
 			}
 		} else {
 			err = session.Sync2(v)
