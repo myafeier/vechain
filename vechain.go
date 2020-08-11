@@ -364,7 +364,7 @@ type CreateUser struct {
 
 // 创建账号
 //  在此系统只只需创建一个账号，无多账户的需求。
-func GenerateSubAccount(requestNo, accountName, config *VechainConfig, tokenServer IToken) (uid string, err error) {
+func GenerateSubAccount(requestNo, accountName string, config *VechainConfig, tokenServer IToken) (uid string, err error) {
 	url := "v1/artifacts/user/create"
 	postData := `
 		{

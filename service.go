@@ -120,7 +120,7 @@ func (s *Service) StartDaemon() {
 		case block := <-s.SuccessChan:
 			log.Debug("receive success block。。。")
 			go func(b *Block) {
-				log.Debug("run watcher:%d", b.Hash)
+				log.Debug("run watcher:%s", b.Hash)
 				defer func() {
 					if r := recover(); r != nil {
 						log.Debug("Recover: %+v", r)
@@ -290,4 +290,9 @@ func (s *Service) filter(hashes []string) (restIds []string, err error) {
 		restIds = append(restIds, v)
 	}
 	return
+}
+func (self *Service) CreateSubAccount(requestNo, account string) (uid string, err error) {
+
+	log.Debug(requestNo)
+	return GenerateSubAccount(requestNo, account, self.config, self.Token)
 }
