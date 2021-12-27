@@ -174,9 +174,9 @@ Retry:
 		return
 	}
 	if retryTimes > 100 {
-		time.Sleep(1 * time.Minute)
-	} else if retryTimes > 1000 {
 		time.Sleep(1 * time.Hour)
+	} else if retryTimes > 10 {
+		time.Sleep(1 * time.Minute)
 	}
 	req, err := http.NewRequest("POST", config.SiteUrl+url, bytes.NewBuffer(data))
 	if err != nil {

@@ -139,7 +139,7 @@ func (s *Service) StartDaemon() {
 						debug.PrintStack()
 					}
 				}()
-				s.checkFail()
+				//s.checkFail()
 			}()
 		}
 	}
