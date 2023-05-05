@@ -3,37 +3,20 @@ package vechain
 import (
 	"crypto/sha256"
 	"fmt"
-	_ "github.com/go-sql-driver/mysql"
 	"log"
+	"os"
 	"strconv"
 	"testing"
 	"time"
+
+	"github.com/gf-third/yaml"
+	_ "github.com/go-sql-driver/mysql"
 	"xorm.io/xorm"
 )
 
-const (
-	SiteUrl             string = "https://developer.vetoolchain.cn/api/"
-	DeveloperId         string = "81e1ae4a965571384d96c92cb92b12a6"
-	DeveloperKey        string = "3df2f8ee7cb4a3473194edca859dbb503408edea1c16b47571e7a6724011fe74"
-	VeVid               string = "9227.cn.v"
-	Address             string = "0xd96199f7c65e14f24943e90398a0d09d1cf3b615"
-	UserIdOfYuanZhiLian string = ""
-	ExploreLink         string = "https://insight.vecha.in/#/test/%s"
-)
-
-var config = &VechainConfig{
-	SiteUrl:             SiteUrl,
-	DeveloperId:         DeveloperId,
-	DeveloperKey:        DeveloperKey,
-	VeVid:               VeVid,
-	Address:             Address,
-	Nonce:               Nonce(),
-	UserIdOfYuanZhiLian: UserIdOfYuanZhiLian,
-	ExploreLink:         ExploreLink,
-}
 var engine *xorm.Engine
 
-func init() {
+func ainit() {
 	var err error
 	engine, err = xorm.NewEngine("mysql", "test:test@tcp(127.0.0.1:3306)/test?charset=utf8mb4")
 	if err != nil {
@@ -44,7 +27,17 @@ func init() {
 	engine.SetMaxOpenConns(100)
 	engine.SetConnMaxLifetime(100 * time.Second)
 	engine.ShowSQL(true)
-	go InitService(engine, config)
+	f, err := os.Open("./config.yml")
+	if err != nil {
+		panic(err)
+	}
+	decoder := yaml.NewDecoder(f)
+	var config VechainConfig
+	err = decoder.Decode(&config)
+	if err != nil {
+		panic(err)
+	}
+	go InitService(engine, &config)
 }
 func TestCreateSubAccount(t *testing.T) {
 	account := "yuanzhilian"
