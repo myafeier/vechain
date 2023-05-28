@@ -1,0 +1,9 @@
+  SiteUrl             : "https://developer.veplatform.cn/api/"
+  DeveloperId         : "6c44d4aee4f52e65650d88bd2dd85b8f"
+  DeveloperKey        : "d70e73b7959269ffdbe453d550432de902f5f635b05ac7e184569f2417deb230"
+  VeVid               : "9041.cn.v"
+  Address             : "0x65f7ac9ece8ed59044768d53c0d44e3cb7f6ceff"
+  UserIdOfYuanZhiLian : "0xc186332438e79064c619abac038ea6d832667aebf3991c7f7b876f6d7f167b01"
+  ExploreLink         : "https://explore.vechain.org/transactions/%s"
+
+

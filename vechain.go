@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -21,10 +22,15 @@ import (
 // 通用请求表单
 type Form struct {
 	AppId     string `json:"appid"`
-	AppKey    string `json:"appkey"`
+	AppKey    string `json:"-"`
 	Nonce     string `json:"nonce"`
 	Timestamp string `json:"timestamp"`
 	Signature string `json:"signature"`
+}
+
+func (f *Form) sign() {
+	str := fmt.Sprintf("appid=%s&appkey=%s&nonce=%s&timestamp=%s", f.AppId, f.AppKey, f.Nonce, f.Timestamp)
+	f.Signature = fmt.Sprintf("%x", sha256.Sum256([]byte(strings.ToLower(str))))
 }
 
 // 通用返回结构
@@ -32,12 +38,6 @@ type ResponseData struct {
 	Data    interface{} `json:"data,omitempty"`
 	Code    string      `json:"code,omitempty"`
 	Message string      `json:"message,omitempty"`
-}
-
-func sign(timestamp int64, config *VechainConfig) (signature string) {
-	str := fmt.Sprintf("appid=%s&appkey=%s&nonce=%s&timestamp=%d", config.DeveloperId, config.DeveloperKey, config.Nonce, timestamp)
-	signature = fmt.Sprintf("%x", sha256.Sum256([]byte(strings.ToLower(str))))
-	return
 }
 
 // 区块链浏览器浏览地址
@@ -48,12 +48,13 @@ func BlockChainExploreLink(transactionId string, config *VechainConfig) string {
 // =========================Token======================
 // 返回Token结构
 type Token struct {
-	Token  string `json:"token"`
-	Expire int64  `json:"expire"`
+	Token      string `json:"token"`
+	Expire     int64  `json:"expire"`
+	TimeToLive int64  `json:"timeTolive` //剩余时间
 }
 
 var lock int32 = 0
-var refreshError = fmt.Errorf("token refreshing")
+var refreshError = errors.New("token refreshing")
 
 func GetToken(config *VechainConfig) (token *Token, err error) {
 	if atomic.LoadInt32(&lock) == 1 {
@@ -67,9 +68,9 @@ func GetToken(config *VechainConfig) (token *Token, err error) {
 	form := new(Form)
 	form.AppId = config.DeveloperId
 	form.AppKey = config.DeveloperKey
-	form.Nonce = config.Nonce
+	form.Nonce = Nonce()
 	form.Timestamp = strconv.FormatInt(timestamp, 10)
-	form.Signature = sign(timestamp, config)
+	form.sign()
 
 	requestUrl := config.SiteUrl + "v2/tokens"
 	formByte, err := json.Marshal(form)
@@ -83,7 +84,8 @@ func GetToken(config *VechainConfig) (token *Token, err error) {
 
 Retry:
 	retryTimes++
-	time.Sleep(time.Duration(retryTimes) * time.Minute)
+	log.Info("%d", retryTimes)
+	time.Sleep(time.Duration(retryTimes-1) * time.Minute)
 	request, err := http.NewRequest("POST", requestUrl, data)
 	if err != nil {
 		log.Error("%s", err.Error())
@@ -114,8 +116,8 @@ Retry:
 	respData := new(ResponseData)
 	respData.Data = new(Token)
 	err = json.Unmarshal(body, respData)
-	if respData.Code != "" {
-		err = fmt.Errorf("responseCode:%s error,message:%s\n", respData.Code, respData.Message)
+	if respData.Code != "common.success" {
+		err = fmt.Errorf("responseCode:%s error,message:%+v", respData.Code, respData.Data)
 		log.Error(err.Error())
 		goto Retry
 	}
@@ -207,7 +209,7 @@ Retry:
 		return
 	}
 
-	if respData.Code == "" {
+	if respData.Code == "common.success" {
 		response = respData.Data.(*GenerateResponse)
 		log.Debug("response %+v \n", *response)
 		if response.Status == "GENERATING" {
@@ -218,34 +220,39 @@ Retry:
 	} else if respData.Code == "" {
 		goto RetryWithNewToken
 	} else {
-		err = fmt.Errorf("Occupy vid error, remote response Code:%s, MSG: %s.", respData.Code, respData.Message)
+		err = fmt.Errorf("occupy vid error, remote response code:%s, msg: %s", respData.Code, respData.Message)
 		log.Error(err.Error())
 	}
 	return
 }
 
-// ======================Occupy=============
-// 抢占请求表单
-type OccupyVidRequest struct {
-	RequestNo string   `json:"requestNo"`
-	VidList   []string `json:"vidList"`
+type Hash struct {
+	Vid      string `json:"vid"`
+	DataHash string `json:"dataHash"`
+}
+type SubmitRequest struct {
+	RequestNo   string  `json:"requestNo,omitempty"`
+	OperatorUID string  `json:"operatorUID,omitempty"`
+	HashList    []*Hash `json:"hashList"`
 }
 
-// 抢占响应结构
-type OccupyVidResponse struct {
-	RequestNo   string   `json:"requestNo,omitempty"`   // 请求编号
-	Url         string   `json:"url,omitempty"`         // 扫码 url
-	Quantity    int      `json:"quantity,omitempty"`    //请求的vid个数
-	Status      string   `json:"status,omitempty"`      // 生成状态(GENERATING:抢占中，SUCCESS：成功)
-	SuccessList []string `json:"successList,omitempty"` // 抢占成功 vid 列表
-	FailureList []string `json:"failureList,omitempty"` // 抢占失败 vid 列表
+type Tx struct {
+	TxId       string `json:"txId"`
+	Vid        string `json:"vid"`
+	DataHash   string `json:"dataHash"`
+	SubmitTime int64  `json:"submitTime"`
+}
+type SubmitResponse struct {
+	RequestNo   string `json:"requestNo,omitempty"`
+	OrderStatus string `json:"orderStatus,omitempty"`
+	TxList      []*Tx  `json:"txList"`
 }
 
-// 抢占vid
-func OccupyVid(ctx context.Context, config *VechainConfig, tokenServer IToken) (response *OccupyVidResponse, err error) {
+// 上链
+func Submit(ctx context.Context, config *VechainConfig, tokenServer IToken) (response *GenerateResponse, err error) {
 
-	url := "v1/vid/occupy"
-	request := (ctx.Value("request")).(*OccupyVidRequest)
+	url := "v2/provenance/hash/create"
+	request := (ctx.Value("request")).(*GenerateRequest)
 	data, err := json.Marshal(request)
 	if err != nil {
 		log.Error(err.Error())
@@ -282,7 +289,6 @@ Retry:
 	}
 
 	req.Header.Add("Content-Type", "application/json;charset=utf-8")
-	req.Header.Add("language", "zh_hans")
 	req.Header.Add("x-api-token", token)
 
 	client := http.DefaultClient
@@ -306,7 +312,7 @@ Retry:
 	}
 
 	respData := new(ResponseData)
-	respData.Data = new(OccupyVidResponse)
+	respData.Data = new(GenerateResponse)
 
 	err = json.Unmarshal(respBody, respData)
 	if err != nil {
@@ -314,8 +320,8 @@ Retry:
 		return
 	}
 
-	if respData.Code == "" {
-		response = respData.Data.(*OccupyVidResponse)
+	if respData.Code == "common.success" {
+		response = respData.Data.(*GenerateResponse)
 		log.Debug("response %+v \n", *response)
 		if response.Status == "GENERATING" {
 			time.Sleep(1 * time.Minute)
@@ -325,128 +331,8 @@ Retry:
 	} else if respData.Code == "" {
 		goto RetryWithNewToken
 	} else {
-		err = fmt.Errorf("Occupy vid error, remote response Code:%s, MSG: %s.", respData.Code, respData.Message)
+		err = fmt.Errorf("occupy vid error, remote response code:%s, msg: %s", respData.Code, respData.Message)
 		log.Error(err.Error())
-	}
-	return
-}
-
-//================================Post========
-
-type PostArtifactResponse struct {
-	RequestNo string                      `json:"requestNo,omitempty"` // 请求编号
-	Uid       string                      `json:"uid,omitempty"`       // 上链子账户id
-	Status    string                      `json:"status,omitempty"`    // 生成状态(PROCESSING:上链中，SUCCESS：成功，FAILURE： 失败,INSUFFICIENT:费用不足)
-	TxList    []*PostArtifactResponseData `json:"txList，omitempty"`    //上链结果
-}
-type PostArtifactResponseData struct {
-	TxId        string `json:"txid"`        //上链事务id
-	ClauseIndex string `json:"clauseIndex"` // 每40个vid组成一个clause
-	Vid         string `json:"vid"`         //商品ID
-	DataHash    string `json:"dataHash"`    //？
-}
-
-type PostArtifactRequest struct {
-	RequestNo string                     `json:"requestNo"` //请求编号
-	Uid       string                     `json:"uid"`       //用户 Id
-	Data      []*PostArtifactRequestData `json:"data,omitempty"`
-}
-type PostArtifactRequestData struct {
-	DataHash string `json:"dataHash"`
-	Vid      string `json:"vid"`
-}
-
-// 异步上链
-func PostArtifact(ctx context.Context, config *VechainConfig, tokenServer IToken) (response *PostArtifactResponse, err error) {
-
-	url := "v1/artifacts/hashinfo/create"
-
-	request := (ctx.Value("request")).(*PostArtifactRequest)
-	var data []byte
-	data, err = json.Marshal(request)
-	if err != nil {
-		log.Error(err.Error())
-		return
-	}
-
-	justReturn := false
-	go func() {
-		<-ctx.Done()
-		justReturn = true
-		err = ctx.Err()
-		log.Debug("ctx deadLine: %s", err.Error())
-		return
-	}()
-
-	retryTimes := 0
-RetryWithNewToken:
-	token := tokenServer.GetToken()
-Retry:
-	retryTimes++
-
-	if justReturn {
-		return
-	}
-
-	if retryTimes > 100 {
-		time.Sleep(1 * time.Minute)
-	} else if retryTimes > 1000 {
-		time.Sleep(1 * time.Hour)
-	}
-
-	req, err := http.NewRequest("POST", config.SiteUrl+url, bytes.NewBuffer(data))
-	if err != nil {
-		log.Error(err.Error())
-		return
-	}
-	req.Header.Add("Content-Type", "application/json;charset=utf-8")
-	req.Header.Add("language", "zh_hans")
-	req.Header.Add("x-api-token", token)
-
-	client := http.DefaultClient
-
-	resp, err := client.Do(req)
-	if err != nil {
-		log.Error(err.Error())
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		err = fmt.Errorf("[Error] After 10 times retry,RemoteServerStatusError code:%d", resp.StatusCode)
-		log.Error(err.Error())
-		goto Retry
-
-	}
-
-	respBody, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		log.Error(err.Error())
-		goto Retry
-	}
-
-	respData := new(ResponseData)
-	respData.Data = new(PostArtifactResponse)
-
-	err = json.Unmarshal(respBody, respData)
-	if err != nil {
-		log.Error(err.Error())
-		goto Retry
-	}
-
-	if respData.Code == "" {
-		log.Debug("postArtifact response %s,%+v \n", respData.Message, respData.Data)
-		response = respData.Data.(*PostArtifactResponse)
-		if response.Status == "PROCESSING" {
-			time.Sleep(1 * time.Minute)
-			goto Retry
-		}
-	} else if respData.Code == "" {
-		goto RetryWithNewToken
-	} else {
-		err = fmt.Errorf("PostArtifactResponseerror, remote response Code:%s, MSG: %s.", respData.Code, respData.Message)
-		log.Error(err.Error())
-		return
 	}
 	return
 }

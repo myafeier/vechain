@@ -1,14 +1,15 @@
 package vechain
 
 import (
-	"github.com/myafeier/log"
 	"math/rand"
 	"sync/atomic"
 	"time"
+
+	"github.com/myafeier/log"
 )
 
 type IToken interface {
-	UpdateToken()error
+	UpdateToken() error
 	GetToken() (token string)
 }
 type DefaultToken struct {
@@ -29,18 +30,18 @@ func NewDefaultToken(config *VechainConfig) *DefaultToken {
 }
 
 func (self *DefaultToken) GetToken() string {
-	Retry:
+Retry:
 	old := (self.token.Load()).(string)
-	if old == "" || time.Now().Sub(self.refreshed).Seconds() > float64(self.expire-1600) {
-		err:=self.UpdateToken()
-		if err!=nil{
-			if err==refreshError{
+	if old == "" || time.Since(self.refreshed).Seconds() > float64(self.expire-1600) {
+		err := self.UpdateToken()
+		if err != nil {
+			if err == refreshError {
 				rand.Seed(time.Now().Unix())
-				time.Sleep(time.Duration(rand.Intn(100))*time.Microsecond)
+				time.Sleep(time.Duration(rand.Intn(100)) * time.Microsecond)
 				goto Retry
-			}else{
+			} else {
 				log.Error(err.Error())
-				time.Sleep(10*time.Second)
+				time.Sleep(10 * time.Second)
 				goto Retry
 			}
 		}
@@ -50,7 +51,7 @@ func (self *DefaultToken) GetToken() string {
 	}
 }
 
-func (self *DefaultToken) UpdateToken()(err error) {
+func (self *DefaultToken) UpdateToken() (err error) {
 
 	token, err := GetToken(self.config)
 	if err != nil {
