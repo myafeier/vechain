@@ -1,6 +1,3 @@
-/*
-这是一个调用示例
-*/
 package main
 
 import (
@@ -32,7 +29,7 @@ func init() {
 		panic(err)
 	}
 
-	engine, err = xorm.NewEngine("mysql", "test:test@tcp(127.0.0.1:3306)/test?charset=utf8mb4")
+	engine, err = xorm.NewEngine("mysql", "test:test@tcp(alternate:3306)/test?charset=utf8mb4")
 	if err != nil {
 		log.Error(err.Error())
 		return
@@ -46,8 +43,8 @@ func init() {
 
 func main() {
 	var data []string
-	for i := 1; i < 5; i++ {
-		data = append(data, fmt.Sprintf("0x%X", sha256.Sum256([]byte("s"+strconv.Itoa(i)))))
+	for i := 1; i < 4; i++ {
+		data = append(data, fmt.Sprintf("%x", sha256.Sum256([]byte("s"+strconv.Itoa(i)))))
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	vechain.InitService(ctx, engine, &config)
@@ -55,8 +52,11 @@ func main() {
 
 	err := vechain.AsyncSubmit(data)
 	if err != nil {
-		log.Error(err.Error())
+		log.Error("%+v", err)
 		return
+	}
+	for{
+		time.Sleep(1*time.Second)
 	}
 	cancel()
 }

@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	perrors "github.com/pkg/errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -212,9 +213,13 @@ Retry:
 	if respData.Code == "common.success" {
 		response = respData.Data.(*GenerateResponse)
 		log.Debug("response %+v \n", *response)
-		if response.Status == "GENERATING" {
+		if response.Status == "PROCESSING" {
 			time.Sleep(1 * time.Minute)
 			goto Retry
+		}
+		if len(response.VidList)!=request.Quantity{
+			err=perrors.WithStack(fmt.Errorf("生成的vid数量:%d和请求数量不一致:%d",len(response.VidList),request.Quantity)) 
+			return
 		}
 		return
 	} else if respData.Code == "" {

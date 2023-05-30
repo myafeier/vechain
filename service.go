@@ -7,6 +7,7 @@ import (
 	"runtime/debug"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/pkg/errors"
@@ -16,6 +17,8 @@ import (
 )
 
 var Daemon *Service
+
+const BatchAmount = 2
 
 func init() {
 	log.SetPrefix("Vechain")
@@ -31,6 +34,7 @@ func InitService(ctx context.Context, engine *xorm.Engine, config *VechainConfig
 		Daemon.dbEngine = engine
 		Daemon.config = config
 		Daemon.missionChan = make(chan []*Block, 100)
+		Daemon.key = time.Now().Unix()
 	}
 	initTable(engine.NewSession())
 	go Daemon.StartDaemon(ctx)
@@ -53,10 +57,15 @@ func AsyncSubmit(hashes []string) (err error) {
 		return
 	}
 
-	loop := int(math.Floor(float64(len(blocks)) / 2000))
+	loop := int(math.Ceil(float64(len(blocks)) / BatchAmount))
+	log.Debug("%d", loop)
 
 	for i := 0; i < loop; i++ {
-		pending := blocks[i*2000 : (i+1)*2000]
+		end := (i + 1) * BatchAmount
+		if end > len(blocks) {
+			end = len(blocks)
+		}
+		pending := blocks[i*BatchAmount : end]
 		Daemon.missionChan <- pending
 	}
 	return
@@ -97,6 +106,10 @@ type Service struct {
 	Token       IToken
 	dbEngine    *xorm.Engine
 	config      *VechainConfig
+	key         int64
+}
+func (s *Service) getKey() int64{
+	return atomic.AddInt64(&s.key,1)
 }
 
 func (s *Service) StartDaemon(ctx context.Context) {
@@ -105,7 +118,7 @@ func (s *Service) StartDaemon(ctx context.Context) {
 	for {
 		select {
 		case block := <-s.SuccessChan:
-			log.Debug("receive success block。。。")
+			log.Debug("receive success block")
 			go func(b *Block) {
 				log.Debug("run watcher:%s", b.Hash)
 				defer func() {
@@ -177,6 +190,7 @@ func (s *Service) AddBlock(hash []string) (result []*Block, err error) {
 			err = errors.WithStack(err)
 			return
 		}
+		result = append(result, b)
 	}
 	return
 }
@@ -187,7 +201,7 @@ func (s *Service) Generate(block []*Block) (err error) {
 	amount := len(block)
 	req := new(GenerateRequest)
 	req.Quantity = amount
-	req.RequestNo = string(time.Now().Unix())
+	req.RequestNo = strconv.FormatInt(s.getKey(),10)
 
 	ctx := context.WithValue(context.Background(), "request", req)
 	resp, err := Generate(ctx, s.config, s.Token)
@@ -197,6 +211,7 @@ func (s *Service) Generate(block []*Block) (err error) {
 		}
 		return
 	}
+
 	for k, v := range block {
 		v.Vid = resp.VidList[k]
 	}
@@ -244,7 +259,7 @@ func (s *Service) Submit(block []*Block) (err error) {
 	// 统计hash数量
 	req := new(SubmitRequest)
 	req.OperatorUID = s.config.UserIdOfYuanZhiLian
-	req.RequestNo = strconv.FormatInt(time.Now().Unix(), 10)
+	req.RequestNo = strconv.FormatInt(s.getKey(), 10)
 	for _, v := range block {
 		req.HashList = append(req.HashList, &Hash{
 			Vid:      v.Vid,
