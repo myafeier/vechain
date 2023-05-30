@@ -30,7 +30,7 @@ func Nonce() string {
 }
 
 func initTable(session *xorm.Session) (err error) {
-	var tables = []interface{}{&Block{}, &CommandModel{}}
+	var tables = []interface{}{&Block{}}
 
 	for _, v := range tables {
 		var isExist bool

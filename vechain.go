@@ -237,22 +237,24 @@ type SubmitRequest struct {
 }
 
 type Tx struct {
-	TxId       string `json:"txId"`
-	Vid        string `json:"vid"`
-	DataHash   string `json:"dataHash"`
-	SubmitTime int64  `json:"submitTime"`
+	TxId        string `json:"txId"` // 交易号
+	Vid         string `json:"vid"`  //
+	DataHash    string `json:"dataHash"`
+	SubmitTime  int64  `json:"submitTime"`
+	ClauseIndex int64  `json:"clauseIndex"` //当前区块链交易号下的clause index
+	Duplicated  bool   `json:"duplicated"`  //是否重复上链
 }
 type SubmitResponse struct {
-	RequestNo   string `json:"requestNo,omitempty"`
-	OrderStatus string `json:"orderStatus,omitempty"`
-	TxList      []*Tx  `json:"txList"`
+	RequestNo string `json:"requestNo,omitempty"`
+	Status    string `json:"orderStatus,omitempty"`
+	TxList    []*Tx  `json:"txList"`
 }
 
 // 上链
-func Submit(ctx context.Context, config *VechainConfig, tokenServer IToken) (response *GenerateResponse, err error) {
+func Submit(ctx context.Context, config *VechainConfig, tokenServer IToken) (response *SubmitResponse, err error) {
 
 	url := "v2/provenance/hash/create"
-	request := (ctx.Value("request")).(*GenerateRequest)
+	request := (ctx.Value("request")).(*SubmitRequest)
 	data, err := json.Marshal(request)
 	if err != nil {
 		log.Error(err.Error())
@@ -304,6 +306,7 @@ Retry:
 		log.Error(err.Error())
 		goto Retry
 	}
+	log.Debug("%s", respBody)
 
 	if resp.StatusCode != http.StatusOK {
 		err = fmt.Errorf("RemoteServerStatusError code:%d,body:%s", resp.StatusCode, respBody)
@@ -312,7 +315,7 @@ Retry:
 	}
 
 	respData := new(ResponseData)
-	respData.Data = new(GenerateResponse)
+	respData.Data = new(SubmitResponse)
 
 	err = json.Unmarshal(respBody, respData)
 	if err != nil {
@@ -321,9 +324,9 @@ Retry:
 	}
 
 	if respData.Code == "common.success" {
-		response = respData.Data.(*GenerateResponse)
+		response = respData.Data.(*SubmitResponse)
 		log.Debug("response %+v \n", *response)
-		if response.Status == "GENERATING" {
+		if response.Status == "PROCESSING" {
 			time.Sleep(1 * time.Minute)
 			goto Retry
 		}

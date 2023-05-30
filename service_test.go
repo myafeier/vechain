@@ -62,19 +62,4 @@ func TestAsyncSubmit(t *testing.T) {
 		return
 	}
 
-	for {
-		var hasCommandRunning bool
-		Daemon.RunningCommandIds.Range(func(key, value interface{}) bool {
-			hasCommandRunning = true
-			return true
-		})
-
-		if hasCommandRunning {
-			t.Log("has command running...")
-			time.Sleep(10 * time.Second)
-		} else {
-			return
-		}
-	}
-
 }
