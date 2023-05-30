@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"runtime/debug"
+	"strconv"
 	"sync"
 	"time"
 
@@ -22,16 +23,17 @@ func init() {
 }
 
 // NewService 新建服务
-func InitService(engine *xorm.Engine, config *VechainConfig) {
+func InitService(ctx context.Context, engine *xorm.Engine, config *VechainConfig) {
 	if Daemon == nil {
 		Daemon = &Service{dbEngine: engine}
 		Daemon.Token = NewDefaultToken(config)
 		Daemon.SuccessChan = make(chan *Block, 10000)
 		Daemon.dbEngine = engine
 		Daemon.config = config
+		Daemon.missionChan = make(chan []*Block, 100)
 	}
 	initTable(engine.NewSession())
-	go Daemon.StartDaemon()
+	go Daemon.StartDaemon(ctx)
 }
 
 // 提交产品ID和产品HASH，提交上链
@@ -46,7 +48,7 @@ func AsyncSubmit(hashes []string) (err error) {
 		err = errors.WithStack(fmt.Errorf("length of hashes==0"))
 		return
 	}
-	blocks, err := Daemon.AddHashs(hashes)
+	blocks, err := Daemon.AddBlock(hashes)
 	if err != nil {
 		return
 	}
@@ -55,10 +57,7 @@ func AsyncSubmit(hashes []string) (err error) {
 
 	for i := 0; i < loop; i++ {
 		pending := blocks[i*2000 : (i+1)*2000]
-		err = Daemon.Generate(pending)
-		if err != nil {
-			return
-		}
+		Daemon.missionChan <- pending
 	}
 	return
 
@@ -92,15 +91,17 @@ func AddPostArtifactObserver(observer IObserver) {
 
 // Service 服务
 type Service struct {
-	SuccessChan chan *Block //执行成功后的处理通道
-	Observers   []IObserver //观察者
+	SuccessChan chan *Block   //执行成功后的处理通道
+	missionChan chan []*Block //正常全流程
+	Observers   []IObserver   //观察者
 	Token       IToken
 	dbEngine    *xorm.Engine
 	config      *VechainConfig
 }
 
-func (s *Service) StartDaemon() {
+func (s *Service) StartDaemon(ctx context.Context) {
 	ticket := time.NewTicker(CheckFailDuration)
+	running := false
 	for {
 		select {
 		case block := <-s.SuccessChan:
@@ -120,17 +121,39 @@ func (s *Service) StartDaemon() {
 		case <-ticket.C:
 			go func() {
 				defer func() {
-					if r := recover(); r != nil {
-						log.Debug("Recover: %+v", r)
-						debug.PrintStack()
-					}
+					s.checkFail()
 				}()
-				//s.checkFail()
 			}()
+		case block := <-s.missionChan:
+			go func() {
+				running = true
+				if err := s.Generate(block); err != nil {
+					log.Error("%+v", err)
+				} else {
+					if err = s.Submit(block); err != nil {
+						log.Error("%+v", err)
+					}
+				}
+				running = false
+			}()
+		case <-ctx.Done():
+			for {
+				if running {
+					time.Sleep(1 * time.Second)
+				} else {
+					return
+				}
+			}
 		}
 	}
 }
-func (s *Service) AddHashs(hash []string) (result []*Block, err error) {
+
+func (s *Service) checkFail() {
+	log.Info("check fail")
+
+}
+
+func (s *Service) AddBlock(hash []string) (result []*Block, err error) {
 	sess := s.dbEngine.NewSession()
 	if err = sess.Begin(); err != nil {
 		err = errors.WithStack(err)
@@ -169,6 +192,9 @@ func (s *Service) Generate(block []*Block) (err error) {
 	ctx := context.WithValue(context.Background(), "request", req)
 	resp, err := Generate(ctx, s.config, s.Token)
 	if err != nil {
+		if err1 := s.storeFailMission(req.RequestNo, MissionTypeOfGenerate, MissionStatusOfFail, err.Error(), block); err1 != nil {
+			err = errors.WithMessage(err, err1.Error())
+		}
 		return
 	}
 	for k, v := range block {
@@ -179,6 +205,72 @@ func (s *Service) Generate(block []*Block) (err error) {
 		return
 	}
 	// 上链
+	return
+}
+
+func (s *Service) storeFailMission(requestNo string, mtype MissionType, status MissionStatus, msg string, block []*Block) (err error) {
+	sess := s.dbEngine.NewSession()
+	defer sess.Close()
+	var mission Mission
+	has, err := sess.Where("request_no=?", requestNo).Get(&mission)
+	if err != nil {
+		err = errors.WithStack(err)
+		return
+	}
+	mission.Status = status
+	mission.Message = msg
+	if has {
+		_, err = sess.Where("id=?", mission.Id).Cols("status", "message", "updated").Update(&mission)
+		if err != nil {
+			err = errors.WithStack(err)
+			return
+		}
+	} else {
+		mission.MissionType = mtype
+		for _, v := range block {
+			mission.BlockIds = append(mission.BlockIds, v.Id)
+		}
+		_, err = sess.Insert(&mission)
+		if err != nil {
+			err = errors.WithStack(err)
+			return
+		}
+	}
+	return
+}
+
+// 提交上链请求
+func (s *Service) Submit(block []*Block) (err error) {
+	// 统计hash数量
+	req := new(SubmitRequest)
+	req.OperatorUID = s.config.UserIdOfYuanZhiLian
+	req.RequestNo = strconv.FormatInt(time.Now().Unix(), 10)
+	for _, v := range block {
+		req.HashList = append(req.HashList, &Hash{
+			Vid:      v.Vid,
+			DataHash: v.Hash,
+		})
+	}
+	ctx := context.WithValue(context.Background(), "request", req)
+	resp, err := Submit(ctx, s.config, s.Token)
+	if err != nil {
+		if err1 := s.storeFailMission(req.RequestNo, MissionTypeOfSubmit, MissionStatusOfFail, err.Error(), block); err1 != nil {
+			err = errors.WithMessage(err, err1.Error())
+		}
+		return
+	}
+	for _, v := range block {
+		for _, vv := range resp.TxList {
+			if vv.Vid == v.Vid {
+				v.ClauseIndex = vv.ClauseIndex
+				v.TxId = vv.TxId
+				v.SubmitTime = time.Unix(vv.SubmitTime, 0)
+				v.State = BlockStatePosted
+				break
+			}
+		}
+	}
+	err = s.update(block)
 	return
 }
 
@@ -203,19 +295,6 @@ func (s *Service) update(block []*Block) (err error) {
 			return
 		}
 	}
-
-}
-
-// 提交上链请求
-func (self *Service) Submit(hash []*Block) (err error) {
-	// 统计hash数量
-	amount := len(hash)
-	if amount == 0 {
-		errors.WithStack(fmt.Errorf("长度为0"))
-	}
-	// 生成响应数量的vid
-
-	// 上链
 	return
 }
 
