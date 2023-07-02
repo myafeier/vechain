@@ -186,12 +186,30 @@ func (s *Service) AddBlock(hash []string) (result []*Block, err error) {
 	for _, v := range hash {
 		b := new(Block)
 		b.Hash = v
-		b.State = BlockStateToPost
-		_, err = sess.Insert(b)
-		if err != nil {
+		if has, err1 := sess.Get(v); err != nil {
 			err = errors.WithStack(err)
-			return
+			return nil, err1
+		} else {
+			if has {
+				b.State = BlockStateToPost
+				b.ClauseIndex = 0
+				b.TxId = ""
+				b.Vid = ""
+				_, err = sess.Where("id=?", b.Id).Cols("state", "clause_index", "tx_id", "vid").Update(b)
+				if err != nil {
+					err = errors.WithStack(err)
+					return nil, err
+				}
+			} else {
+				b.State = BlockStateToPost
+				_, err = sess.Insert(b)
+				if err != nil {
+					err = errors.WithStack(err)
+					return nil, err
+				}
+			}
 		}
+
 		result = append(result, b)
 	}
 	return
