@@ -82,7 +82,6 @@ func GetToken(config *VechainConfig) (token *Token, err error) {
 		log.Error("%s", err.Error())
 		return
 	}
-	log.Debug("%+v", *form)
 	data := bytes.NewReader(formByte)
 	retryTimes := 0
 

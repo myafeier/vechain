@@ -83,11 +83,12 @@ func GetBlockInfoByUuid(uuid string) (b *Block, err error) {
 	has, err := session.Where("hash=?", uuid).Get(b)
 	if err != nil {
 		log.Error("%+v", err.Error())
-		return
+		return nil, err
 	}
 	log.Debug("blockInfo: %+v", *b)
 	if !has {
 		err = fmt.Errorf("%s not found", uuid)
+		return nil, err
 	}
 	b.GetExplorUrl()
 	return
