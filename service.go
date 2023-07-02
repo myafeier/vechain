@@ -87,8 +87,7 @@ func GetBlockInfoByUuid(uuid string) (b *Block, err error) {
 	}
 	log.Debug("blockInfo: %+v", *b)
 	if !has {
-		err = fmt.Errorf("%s not found", uuid)
-		return nil, err
+		return nil, nil
 	}
 	b.GetExplorUrl()
 	return
