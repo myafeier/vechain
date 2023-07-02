@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
-	perrors "github.com/pkg/errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -14,6 +13,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	perrors "github.com/pkg/errors"
 
 	"github.com/myafeier/log"
 )
@@ -72,6 +73,8 @@ func GetToken(config *VechainConfig) (token *Token, err error) {
 	form.Nonce = Nonce()
 	form.Timestamp = strconv.FormatInt(timestamp, 10)
 	form.sign()
+
+	log.Debug("form %+v", *form)
 
 	requestUrl := config.SiteUrl + "v2/tokens"
 	formByte, err := json.Marshal(form)
@@ -217,8 +220,8 @@ Retry:
 			time.Sleep(1 * time.Minute)
 			goto Retry
 		}
-		if len(response.VidList)!=request.Quantity{
-			err=perrors.WithStack(fmt.Errorf("生成的vid数量:%d和请求数量不一致:%d",len(response.VidList),request.Quantity)) 
+		if len(response.VidList) != request.Quantity {
+			err = perrors.WithStack(fmt.Errorf("生成的vid数量:%d和请求数量不一致:%d", len(response.VidList), request.Quantity))
 			return
 		}
 		return

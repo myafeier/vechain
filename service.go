@@ -58,7 +58,7 @@ func AsyncSubmit(hashes []string) (err error) {
 	}
 
 	loop := int(math.Ceil(float64(len(blocks)) / BatchAmount))
-	log.Debug("%d", loop)
+	log.Debug("loop:%d", loop)
 
 	for i := 0; i < loop; i++ {
 		end := (i + 1) * BatchAmount
@@ -108,8 +108,9 @@ type Service struct {
 	config      *VechainConfig
 	key         int64
 }
-func (s *Service) getKey() int64{
-	return atomic.AddInt64(&s.key,1)
+
+func (s *Service) getKey() int64 {
+	return atomic.AddInt64(&s.key, 1)
 }
 
 func (s *Service) StartDaemon(ctx context.Context) {
@@ -201,7 +202,7 @@ func (s *Service) Generate(block []*Block) (err error) {
 	amount := len(block)
 	req := new(GenerateRequest)
 	req.Quantity = amount
-	req.RequestNo = strconv.FormatInt(s.getKey(),10)
+	req.RequestNo = strconv.FormatInt(s.getKey(), 10)
 
 	ctx := context.WithValue(context.Background(), "request", req)
 	resp, err := Generate(ctx, s.config, s.Token)
