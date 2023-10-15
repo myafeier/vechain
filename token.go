@@ -19,8 +19,11 @@ type DefaultToken struct {
 	refreshed time.Time `json:"-"` // token更新时间
 }
 
+var r *rand.Rand
+
 func init() {
 	var _ IToken = &DefaultToken{}
+	r = rand.New(rand.NewSource(time.Now().UnixNano()))
 }
 
 func NewDefaultToken(config *VechainConfig) *DefaultToken {
@@ -36,8 +39,7 @@ Retry:
 		err := self.UpdateToken()
 		if err != nil {
 			if err == refreshError {
-				rand.Seed(time.Now().Unix())
-				time.Sleep(time.Duration(rand.Intn(100)) * time.Microsecond)
+				time.Sleep(time.Duration(r.Intn(100)) * time.Microsecond)
 				goto Retry
 			} else {
 				log.Error(err.Error())
