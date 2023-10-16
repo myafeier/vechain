@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"strconv"
 	"strings"
@@ -53,7 +52,7 @@ func BlockChainExploreLink(transactionId string, config *VechainConfig) string {
 type Token struct {
 	Token      string `json:"token"`
 	Expire     int64  `json:"expire"`
-	TimeToLive int64  `json:"timeTolive` //剩余时间
+	TimeToLive int64  `json:"timeTolive"` //剩余时间
 }
 
 var lock int32 = 0
@@ -68,11 +67,10 @@ func GetToken(config *VechainConfig) (token *Token, err error) {
 	defer atomic.StoreInt32(&lock, 0)
 
 	retryTimes := 0
-
 Retry:
-	retryTimes++
 	token, err = getToken(retryTimes, config)
 	if err != nil {
+		retryTimes++
 		goto Retry
 	}
 	return
@@ -98,7 +96,7 @@ func getToken(retryTimes int, config *VechainConfig) (token *Token, err error) {
 
 	data := bytes.NewReader(formByte)
 
-	time.Sleep(time.Duration(retryTimes-1) * time.Minute)
+	time.Sleep(time.Duration(retryTimes) * time.Minute)
 	request, err := http.NewRequest("POST", requestUrl, data)
 	if err != nil {
 		log.Error("%s", err.Error())
@@ -201,7 +199,7 @@ Retry:
 		goto Retry
 	}
 	defer resp.Body.Close()
-	respBody, err := ioutil.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		log.Error(err.Error())
 		goto Retry
@@ -318,7 +316,7 @@ Retry:
 		goto Retry
 	}
 	defer resp.Body.Close()
-	respBody, err := ioutil.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		log.Error(err.Error())
 		goto Retry
@@ -394,7 +392,7 @@ func GenerateSubAccount(requestNo, accountName string, config *VechainConfig, to
 	}
 	defer resp.Body.Close()
 
-	respBody, err := ioutil.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		log.Error(err.Error())
 		return
