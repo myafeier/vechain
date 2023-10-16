@@ -68,6 +68,10 @@ func GetToken(config *VechainConfig) (token *Token, err error) {
 
 	retryTimes := 0
 Retry:
+	if retryTimes > 10 {
+		err = errors.New("获取token失败")
+		return
+	}
 	token, err = getToken(retryTimes, config)
 	if err != nil {
 		retryTimes++
