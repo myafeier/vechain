@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"strconv"
@@ -66,6 +67,19 @@ func GetToken(config *VechainConfig) (token *Token, err error) {
 	atomic.StoreInt32(&lock, 1)
 	defer atomic.StoreInt32(&lock, 0)
 
+	retryTimes := 0
+
+Retry:
+	retryTimes++
+	token, err = getToken(retryTimes, config)
+	if err != nil {
+		goto Retry
+	}
+	return
+}
+
+func getToken(retryTimes int, config *VechainConfig) (token *Token, err error) {
+
 	timestamp := time.Now().Unix()
 	form := new(Form)
 	form.AppId = config.DeveloperId
@@ -74,25 +88,21 @@ func GetToken(config *VechainConfig) (token *Token, err error) {
 	form.Timestamp = strconv.FormatInt(timestamp, 10)
 	form.sign()
 
-	log.Debug("form %+v", *form)
+	log.Debug("get token: No.%d, form %+v", retryTimes, *form)
 
 	requestUrl := config.SiteUrl + "v2/tokens"
 	formByte, err := json.Marshal(form)
 	if err != nil {
-		log.Error("%s", err.Error())
-		return
+		panic(err)
 	}
-	data := bytes.NewReader(formByte)
-	retryTimes := 0
 
-Retry:
-	retryTimes++
-	log.Info("%d", retryTimes)
+	data := bytes.NewReader(formByte)
+
 	time.Sleep(time.Duration(retryTimes-1) * time.Minute)
 	request, err := http.NewRequest("POST", requestUrl, data)
 	if err != nil {
 		log.Error("%s", err.Error())
-		goto Retry
+		return
 	}
 	defer request.Body.Close()
 
@@ -102,18 +112,18 @@ Retry:
 	response, err := client.Do(request)
 	if err != nil {
 		log.Error("%s", err.Error())
-		goto Retry
+		return
 	}
 	defer response.Body.Close()
 	if response.StatusCode != 200 {
 		log.Error("%s", err.Error())
-		goto Retry
+		return
 	}
 
-	body, err := ioutil.ReadAll(response.Body)
+	body, err := io.ReadAll(response.Body)
 	if err != nil {
 		log.Error("%s", err.Error())
-		goto Retry
+		return
 	}
 	log.Debug("toke response :%s \n", body)
 	respData := new(ResponseData)
@@ -122,7 +132,7 @@ Retry:
 	if respData.Code != "common.success" {
 		err = fmt.Errorf("responseCode:%s error,message:%+v", respData.Code, respData.Data)
 		log.Error(err.Error())
-		goto Retry
+		return
 	}
 	token = respData.Data.(*Token)
 	return
